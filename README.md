@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Learning Journal - October 2025
 
 Welcome to my monthly learning journal focused on AI/ML and software engineering practices.
