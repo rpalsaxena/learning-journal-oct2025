@@ -1,0 +1,9 @@
+[project]
+name = "course1-llm-engineering"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "wandb>=0.22.1",
+]

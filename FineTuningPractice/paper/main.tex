@@ -1,0 +1,143 @@
+% AAAI-25 template-based two-column paper
+% Note: Ensure you have aaai25.sty and associated files in your TEXINPUTS path or the project folder.
+\documentclass[letterpaper]{article}
+\usepackage{aaai25}  % requires the official AAAI style file
+\usepackage{times}
+\usepackage{helvet}
+\usepackage{courier}
+\usepackage[hyphens]{url}
+\usepackage{graphicx}
+\urlstyle{rm}
+\def\UrlFont{\rm}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{siunitx}
+\usepackage{mathtools}
+\usepackage{wrapfig}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{placeins}
+
+% Anonymized submission setup
+\pdfinfo{
+/TemplateVersion (2025.1)
+}
+
+% Title and authors (anonymous for double-blind)
+\title{NeuroGPT 2.0: Enhanced EEG Foundation Modeling with Spatial Priors, Dynamic Masking, and Parameter-Efficient Adaptation}
+\author{Anonymous Author(s)}
+\affiliations{Anonymous Institution\\ anonymous@contact}
+
+% Helpful macros
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\vect}[1]{\mathbf{#1}}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\simfunc}{\operatorname{sim}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Electroencephalography (EEG) foundation models address data scarcity and heterogeneity in Brain--Computer Interface (BCI) applications. Building on prior encoder\,\textendash\,decoder self-supervised approaches, we propose NeuroGPT~2.0, integrating neuroanatomically informed spatial priors, refined (pretraining-only) dynamic causal masking, and parameter-efficient fine-tuning (PeFT). We outline datasets, a standardized preprocessing pipeline, and rigorous leave-one-subject-out (LOSO) evaluation with ablations for each component.
+\end{abstract}
+
+\section{Introduction}
+Electroencephalography (EEG) foundation models address key challenges of data scarcity and heterogeneity in BCI. Prior work showed that treating short EEG segments as tokens and optimizing a causal reconstruction objective with a decoder-only transformer learns representations that transfer to motor imagery (MI). We aim to advance this line with: (i) enhanced encoders using spatial priors and contrastive learning, (ii) refined causal masking aligned with EEG statistics, and (iii) PeFT to reduce overfitting on small MI datasets.
+
+\section{Background}
+Prior encoder\,\textendash\,GPT frameworks demonstrated effective self-supervised pretraining on large EEG corpora. Architecturally, encoders with shallow convolutions and self-attention produce embeddings compatible with GPT-2 projections. Empirically, encoder-only fine-tuning often outperforms end-to-end updates on small MI datasets, motivating PeFT. As reported by original authors, earlier studies acknowledged public funding; these acknowledgements pertain solely to the cited work and are unrelated to this submission.
+
+\section{Datasets and Preprocessing}
+\paragraph{Pretraining: TUH EEG Corpus.} We use the Temple University Hospital (TUH) EEG Corpus (\textasciitilde20k recordings; \textasciitilde15k subjects; \textasciitilde5656 hours). Handling heterogeneity: map to a common 10\,--\,20 subset (22 channels), common average reference (CAR), 0.5\,--\,100\,Hz bandpass, 60\,Hz notch, resample to 250\,Hz. Artifact mitigation: automatic blink/muscle heuristics; when available, light ICA or ocular regression; remove extreme-amplitude segments. Channel alignment: spherical interpolation on the 10\,--\,20 scalp grid; impute missing channels from nearest neighbors.
+
+\paragraph{Downstream: BCI Competition IV 2a (Motor Imagery).} Nine subjects, two sessions, 288 trials/session (72/class), four classes: left hand, right hand, feet, tongue. EEG: 22 channels (10\,--\,20), 250\,Hz; EOG provided. Timing: extract MI window [0.5, 4.0]\,s post-cue with baseline correction over [\,-0.5, 0\,]\,s. Preprocessing: CAR; 4\,--\,38\,Hz band; optional 50/60\,Hz notch; per-channel z-score normalization within session; optional filter bank (4\,--\,8, 8\,--\,12, 12\,\textendash\,26, 26\,\textendash\,38\,Hz) in ablations.
+
+\paragraph{Objective for MI classification.}
+\begin{equation}
+\mathcal{L}_{\mathrm{CE}} = - \sum_{c=1}^{4} w_c \, y_c \, \log p_c, \quad p = \softmax(h_\theta(x)),\; y \in \{0,1\}^4.
+\end{equation}
+
+\paragraph{EEG tokenization and chunking.} With sampling rate $f_s$, window $T_w$, and stride $\Delta$, the token length for a sequence of duration $T$ is
+\begin{equation}
+L = 1 + \left\lfloor \frac{f_s T - f_s T_w}{f_s \, \Delta} \right\rfloor,
+\end{equation}
+using $T_w=1.0$\,s, $\Delta=0.5$\,s, and $L\in[256,512]$ by memory.
+
+\paragraph{Practical challenges and options.} Montage mismatch: spherical interpolation and consistent 22-channel mapping. Nonstationarity: per-session normalization and subject-aware augmentations. Class imbalance: class weights $w_c$; optionally focal loss. Artifacts: automatic detection/exclusion; compare with light ICA. Domain shift TUH$\to$BCI2a: feature normalization transfers or small dataset adapters.
+
+\section{Proposed Method}
+\subsection{Enhanced EEG Encoder}
+\paragraph{Spatial priors.} We add a bias matrix $M_{\mathrm{spatial}}$ to attention:
+\begin{equation}
+\mathrm{Attn}(Q,K,V) = \mathrm{softmax}\!\left( \frac{QK^\top}{\sqrt{d_k}} + \alpha M_{\mathrm{spatial}} \right) V.
+\end{equation}
+An RBF kernel over 3D electrode coordinates $p_i$ is one choice:
+\begin{equation}
+[M_{\mathrm{spatial}}]_{ij} = -\frac{\lVert p_i - p_j \rVert_2^2}{2\sigma^2}.
+\end{equation}
+
+\paragraph{Contrastive integration.} We add a subject-aware InfoNCE loss with cosine similarity:
+\begin{equation}
+\mathcal{L}_{\mathrm{InfoNCE}} = -\log \frac{\exp\big(\simfunc(z_i, z_{j^+})/\tau\big)}{\sum_{k=1}^{2N} \mathbf{1}[k\neq i] \, \exp\big(\simfunc(z_i, z_k)/\tau\big)}.
+\end{equation}
+
+\subsection{Refined Causal Masking}
+\paragraph{Adaptive probabilistic masking.}
+\begin{equation}
+\Pr(\mathrm{mask}_i) = \sigma\big(f_\theta(x_i)\big) \, \rho.
+\end{equation}
+\paragraph{Constrained future-aware masking (pretraining only).}
+\begin{equation}
+M^{\mathrm{future}}_{ij} = \begin{cases}
+0, & i \ge j \\
+-\beta\, \log (j-i+1), & i<j<i+w \\
+-\infty, & j \ge i+w
+\end{cases}
+\end{equation}
+Downstream classification remains strictly causal to avoid temporal leakage.
+
+\subsection{Modern Backbone}
+We primarily consider compact GPT-2/DistilGPT2 backbones for feasibility; we may compare to recent open-source models (e.g., Llama/Mistral) as compute permits.
+
+\section{Parameter-Efficient Fine-Tuning}
+\subsection{LoRA vs. full fine-tuning}
+\begin{equation}
+\Delta W = BA, \qquad W = W_0 + \Delta W, \quad \operatorname{rank}(A)=\operatorname{rank}(B)=r.
+\end{equation}
+Updating only $A,B$ reduces trainable parameters and mitigates overfitting.
+
+\subsection{Advanced PeFT options}
+\paragraph{Adaptive rank selection.}
+\begin{equation}
+r_\ell = \max\!\Big( r_{\min}, \min\!\big( r_{\max}, \big\lfloor \tfrac{\lVert \nabla_\ell \rVert_2}{\max_k \lVert \nabla_k \rVert_2} \, r_{\mathrm{budget}} \big\rfloor \big) \Big).
+\end{equation}
+\paragraph{Decoupled learning rates.}
+\begin{equation}
+\eta_A = \eta_{\mathrm{base}}, \qquad \eta_B = \lambda \, \eta_{\mathrm{base}}, \quad \lambda>1.
+\end{equation}
+
+\section{Evaluation Protocol}
+We follow LOSO splits on BCI2a and report accuracy, macro-F1, and Cohen's $\kappa$ with 95\% CIs (bootstrap). Baselines: prior encoder\,\textendash\,GPT configuration, encoder-only fine-tuning, and compact GPT-2 with/without LoRA. Pretraining uses TUH with the stated pipeline and tokenization.
+\begin{equation}
+\operatorname{Acc}_{\mathrm{LOSO}} = \frac{1}{N}\sum_{i=1}^{N} \operatorname{Acc}\big( (\mathcal{D} \setminus S_i) \to S_i \big).
+\end{equation}
+
+\section{Expected Findings and Impact}
+We expect spatial priors and contrastive learning to improve LOSO macro-F1, PeFT to reduce overfitting relative to full fine-tuning, and the overall pipeline to enhance MI generalization. Potential applications include improved clinical EEG analysis and more reliable BCIs.
+
+\section{Conclusion}
+NeuroGPT~2.0 integrates spatial priors, pretraining-only dynamic masking, and PeFT on a compact backbone, with standardized preprocessing and rigorous evaluation for motor imagery classification.
+
+% References
+\bibliography{refs}
+\bibliographystyle{aaai}
+
+\end{document}
