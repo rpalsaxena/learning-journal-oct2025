@@ -5,7 +5,7 @@
 *.key
 secrets/
 config/secrets.json
-
+.pth
 # Python
 __pycache__/
 *.py[cod]

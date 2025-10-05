@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "bs4>=0.0.2",
+    "diffusers>=0.35.1",
     "dotenv>=0.9.9",
+    "soundfile>=0.13.1",
     "wandb>=0.22.1",
 ]
